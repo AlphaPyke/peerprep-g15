@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getAuth } from '../utils/auth';
 import { AppError } from '../utils/app-error';
+import { AdminService } from '../services/admin-service';
 
 // This page should eventually be where admins have CRUD access to questions
 export class AdminController {
@@ -12,6 +13,40 @@ export class AdminController {
             return res.status(200).json({
                 message: 'Admin home',
                 auth,
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+
+    static async promote(req: Request, res: Response, next: NextFunction) {
+        try {
+            const auth = getAuth(req);
+            if (!auth) return next(AppError.unauthorized('Unauthorized'));
+
+            const { username } = req.body;
+            const user = await AdminService.promote(username);
+
+            return res.status(200).json({
+                message: 'User promoted to admin',
+                user,
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+
+    static async demote(req: Request, res: Response, next: NextFunction) {
+        try {
+            const auth = getAuth(req);
+            if (!auth) return next(AppError.unauthorized('Unauthorized'));
+
+            const { username } = req.body;
+            const user = await AdminService.demote(auth.userId, username);
+
+            return res.status(200).json({
+                message: 'User demoted to normal user',
+                user,
             });
         } catch (err) {
             next(err);
