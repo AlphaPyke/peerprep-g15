@@ -133,7 +133,6 @@ export function initSocket(server: http.Server) {
             socket.leave(roomId);
         });
 
-
         //Adding message handling for chat functionality
         socket.on('send-message', async (data) => {
             const { roomId, senderId, username, content } = data;
@@ -145,8 +144,8 @@ export function initSocket(server: http.Server) {
                 username,
                 content,
                 timestamp: new Date(),
-            })
-        })
+            });
+        });
     });
 
     return io;

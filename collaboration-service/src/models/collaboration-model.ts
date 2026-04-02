@@ -24,12 +24,10 @@ const sessionSchema = new mongoose.Schema(
                 username: String,
                 content: String,
                 timestamp: { type: Date, default: Date.now },
-            }
-        ]
+            },
+        ],
     },
     { timestamps: true },
 );
-
-
 
 export const Session = mongoose.model('Session', sessionSchema);

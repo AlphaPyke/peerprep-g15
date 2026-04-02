@@ -258,7 +258,7 @@ describe('executeCode', () => {
             expect(mockedSession.findOneAndUpdate).toHaveBeenCalledWith(
                 { roomId: 'room1' },
                 { $push: { messages: message } },
-                { new: true }
+                { new: true },
             );
             expect(result?.messages).toHaveLength(1);
             expect(result?.messages[0].content).toBe('hello');
@@ -276,5 +276,4 @@ describe('executeCode', () => {
             expect(result).toBeNull();
         });
     });
-
 });
