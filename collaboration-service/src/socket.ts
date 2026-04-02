@@ -7,6 +7,7 @@ import {
     endSession,
     handleDisconnect,
     executeCode,
+    addMessageToSession,
 } from './services/collaboration-service';
 
 const disconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -36,6 +37,11 @@ export function initSocket(server: http.Server) {
 
             const session = await getSession(roomId);
             socket.emit('session-state', session);
+
+            //send chat history to the joining user
+            if (session?.messages?.length) {
+                socket.emit('chat-history', session.messages);
+            }
 
             const usersInRoom = io.sockets.adapter.rooms.get(roomId)?.size ?? 0;
 
@@ -96,6 +102,7 @@ export function initSocket(server: http.Server) {
             disconnectTimers.set(userId, timer);
         });
 
+        // user runs code
         socket.on(
             'run-code',
             async (roomId: string, userId: string, code: string, language: string) => {
@@ -124,6 +131,20 @@ export function initSocket(server: http.Server) {
             await endSession(roomId); // call service directly
             io.to(roomId).emit('session-ended', { reason: 'left' });
             socket.leave(roomId);
+        });
+
+        //Adding message handling for chat functionality
+        socket.on('send-message', async (data) => {
+            const { roomId, senderId, username, content } = data;
+
+            await addMessageToSession(roomId, { senderId, username, content });
+
+            socket.to(roomId).emit('receive-message', {
+                senderId,
+                username,
+                content,
+                timestamp: new Date(),
+            });
         });
     });
 

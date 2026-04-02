@@ -1,3 +1,4 @@
+import { time } from 'console';
 import mongoose from 'mongoose';
 
 const sessionSchema = new mongoose.Schema(
@@ -17,6 +18,14 @@ const sessionSchema = new mongoose.Schema(
             type: Map,
             of: String, // { userId: 'python', userId2: 'javascript' }
         },
+        messages: [
+            {
+                senderId: String,
+                username: String,
+                content: String,
+                timestamp: { type: Date, default: Date.now },
+            },
+        ],
     },
     { timestamps: true },
 );

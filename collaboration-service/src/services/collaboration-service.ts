@@ -103,3 +103,14 @@ export async function handleDisconnect(roomId: string) {
     }
     return false;
 }
+
+export async function addMessageToSession(
+    roomId: string,
+    message: { senderId: string; username: string; content: string },
+) {
+    return await Session.findOneAndUpdate(
+        { roomId },
+        { $push: { messages: message } },
+        { new: true },
+    );
+}
