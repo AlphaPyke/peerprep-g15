@@ -1,6 +1,5 @@
 import { createServer } from 'http';
-const { io: Client } = require('socket.io-client');
-import type { Socket } from 'socket.io-client';
+import Client from 'socket.io-client';
 import { createApp } from '../../app';
 import { initSocket } from '../../socket';
 import {
@@ -10,6 +9,7 @@ import {
     endSession,
     handleDisconnect,
     executeCode,
+    addMessageToSession,
 } from '../../services/collaboration-service';
 
 jest.mock('../../services/collaboration-service');
@@ -18,8 +18,8 @@ const mockedGetSession = jest.mocked(getSession);
 const mockedVoteLanguage = jest.mocked(voteLanguage);
 const mockedUpdateCode = jest.mocked(updateCode);
 const mockedEndSession = jest.mocked(endSession);
-const mockedHandleDisconnect = jest.mocked(handleDisconnect);
 const mockedExecuteCode = jest.mocked(executeCode);
+const mockedAddMessageToSession = jest.mocked(addMessageToSession);
 
 const mockSession = (overrides = {}) => ({
     roomId: 'room1',
@@ -29,6 +29,7 @@ const mockSession = (overrides = {}) => ({
     code: '',
     language: 'python',
     languageVotes: new Map(),
+    messages: [],
     ...overrides,
 });
 
@@ -232,5 +233,112 @@ describe('leave-session', () => {
             expect(data.reason).toBe('left');
             done();
         });
+    });
+});
+
+// ─── send-message ───────────────────────────────────────────
+
+describe('send-message', () => {
+    it('should broadcast message to other user in the room', (done) => {
+        mockedAddMessageToSession.mockResolvedValue(mockSession() as any);
+
+        clientA.emit('join-room', 'room1', 'user1');
+        clientB.emit('join-room', 'room1', 'user2');
+
+        setTimeout(() => {
+            clientA.emit('send-message', {
+                roomId: 'room1',
+                senderId: 'user1',
+                username: 'kiran',
+                content: 'hello',
+            });
+        }, 100);
+
+        clientB.on('receive-message', (data: any) => {
+            expect(data.senderId).toBe('user1');
+            expect(data.username).toBe('kiran');
+            expect(data.content).toBe('hello');
+            expect(data.timestamp).toBeDefined();
+            done();
+        });
+    });
+
+    it('should not send message back to the sender', (done) => {
+        mockedAddMessageToSession.mockResolvedValue(mockSession() as any);
+
+        clientA.emit('join-room', 'room1', 'user1');
+        clientB.emit('join-room', 'room1', 'user2');
+
+        setTimeout(() => {
+            clientA.emit('send-message', {
+                roomId: 'room1',
+                senderId: 'user1',
+                username: 'kiran',
+                content: 'hello',
+            });
+        }, 100);
+
+        clientA.on('receive-message', () => {
+            done(new Error('sender should not receive their own message'));
+        });
+
+        setTimeout(() => done(), 500);
+    });
+
+    it('should save the message to the database', (done) => {
+        mockedAddMessageToSession.mockResolvedValue(mockSession() as any);
+
+        clientA.emit('join-room', 'room1', 'user1');
+
+        setTimeout(() => {
+            clientA.emit('send-message', {
+                roomId: 'room1',
+                senderId: 'user1',
+                username: 'kiran',
+                content: 'hello',
+            });
+        }, 100);
+
+        setTimeout(() => {
+            expect(mockedAddMessageToSession).toHaveBeenCalledWith('room1', {
+                senderId: 'user1',
+                username: 'kiran',
+                content: 'hello',
+            });
+            done();
+        }, 300);
+    });
+});
+
+// ─── chat-history ───────────────────────────────────────────
+
+describe('chat-history', () => {
+    it('should send chat history when user joins room', (done) => {
+        const messages = [
+            { senderId: 'user1', username: 'kiran', content: 'hey', timestamp: new Date() },
+            { senderId: 'user2', username: 'partner', content: 'sup', timestamp: new Date() },
+        ];
+        mockedGetSession.mockResolvedValue(mockSession({ messages }) as any);
+
+        clientA.emit('join-room', 'room1', 'user1');
+
+        clientA.on('chat-history', (history: any) => {
+            expect(history).toHaveLength(2);
+            expect(history[0].content).toBe('hey');
+            expect(history[1].content).toBe('sup');
+            done();
+        });
+    });
+
+    it('should not emit chat-history if no messages exist', (done) => {
+        mockedGetSession.mockResolvedValue(mockSession({ messages: [] }) as any);
+
+        clientA.emit('join-room', 'room1', 'user1');
+
+        clientA.on('chat-history', () => {
+            done(new Error('should not emit chat-history for empty messages'));
+        });
+
+        setTimeout(() => done(), 500);
     });
 });

@@ -6,6 +6,7 @@ import {
     endSession,
     handleDisconnect,
     executeCode,
+    addMessageToSession,
 } from '../../services/collaboration-service';
 import { Session } from '../../models/collaboration-model';
 import axios from 'axios';
@@ -26,6 +27,7 @@ const mockSession = (overrides = {}) => ({
     code: '',
     language: null,
     languageVotes: new Map(),
+    messages: [],
     ...overrides,
 });
 
@@ -239,4 +241,40 @@ describe('executeCode', () => {
             expect.any(Object),
         );
     });
+
+    // ─── addMessageToSession ───────────────────────────────────────────
+
+    describe('addMessageToSession', () => {
+        it('should add a message to the session', async () => {
+            const message = { senderId: 'user1', username: 'kiran', content: 'hello' };
+            const updatedSession = mockSession({
+                messages: [{ ...message, timestamp: new Date() }],
+            });
+
+            mockedSession.findOneAndUpdate = jest.fn().mockResolvedValue(updatedSession);
+
+            const result = await addMessageToSession('room1', message);
+
+            expect(mockedSession.findOneAndUpdate).toHaveBeenCalledWith(
+                { roomId: 'room1' },
+                { $push: { messages: message } },
+                { new: true }
+            );
+            expect(result?.messages).toHaveLength(1);
+            expect(result?.messages[0].content).toBe('hello');
+        });
+
+        it('should return null if session not found', async () => {
+            mockedSession.findOneAndUpdate = jest.fn().mockResolvedValue(null);
+
+            const result = await addMessageToSession('room1', {
+                senderId: 'user1',
+                username: 'kiran',
+                content: 'hello',
+            });
+
+            expect(result).toBeNull();
+        });
+    });
+
 });
