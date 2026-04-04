@@ -9,7 +9,7 @@ async function start() {
 
         const app = createApp();
         app.listen(config.port, () => {
-            console.log(`Question service listening on http://localhost:${config.port}`);
+            console.log(`Matching service listening on http://localhost:${config.port}`);
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
