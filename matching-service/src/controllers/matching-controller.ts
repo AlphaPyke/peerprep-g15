@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getQueueStatus, joinQueue, leaveQueue, listQueuedUsers } from '../services/matching-service';
+import type { AuthenticatedRequest } from '../middleware/auth-middleware';
 
 function getRequiredString(value: unknown) {
 	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
@@ -12,6 +13,7 @@ export class MatchingController {
 
 	static join(req: Request, res: Response, next: NextFunction) {
 		try {
+			const auth = (req as AuthenticatedRequest).auth;
 			const userId = getRequiredString(req.body?.userId);
 			const topic = getRequiredString(req.body?.topic);
 			const difficulty = getRequiredString(req.body?.difficulty);
@@ -25,6 +27,12 @@ export class MatchingController {
 			if (!['easy', 'medium', 'hard'].includes(difficulty)) {
 				return res.status(400).json({
 					message: 'difficulty must be easy, medium, or hard',
+				});
+			}
+
+			if (auth?.userId !== userId) {
+				return res.status(403).json({
+					message: 'Authenticated user does not match request userId',
 				});
 			}
 
@@ -53,11 +61,18 @@ export class MatchingController {
 
 	static leave(req: Request, res: Response, next: NextFunction) {
 		try {
+			const auth = (req as AuthenticatedRequest).auth;
 			const userId = getRequiredString(req.body?.userId);
 
 			if (!userId) {
 				return res.status(400).json({
 					message: 'userId is required',
+				});
+			}
+
+			if (auth?.userId !== userId) {
+				return res.status(403).json({
+					message: 'Authenticated user does not match request userId',
 				});
 			}
 
@@ -78,11 +93,18 @@ export class MatchingController {
 
 	static status(req: Request, res: Response, next: NextFunction) {
 		try {
+			const auth = (req as AuthenticatedRequest).auth;
 			const userId = getRequiredString(req.params.userId || req.query.userId);
 
 			if (!userId) {
 				return res.status(400).json({
 					message: 'userId is required',
+				});
+			}
+
+			if (auth?.userId !== userId) {
+				return res.status(403).json({
+					message: 'Authenticated user does not match request userId',
 				});
 			}
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
+import jwt from 'jsonwebtoken';
 import { createApp } from '../app';
 import { pickBestWaitingUserIndex, resetMatchingState } from '../services/matching-service';
 import type { QueueEntry } from '../models/matching-model';
@@ -13,12 +14,18 @@ async function request(
     method: 'GET' | 'POST',
     path: string,
     body?: Record<string, unknown>,
+    token?: string,
 ): Promise<{ status: number; json: unknown }> {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${baseUrl}${path}`, {
         method,
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers,
         body: body ? JSON.stringify(body) : undefined,
     });
 
@@ -53,6 +60,10 @@ test.beforeEach(() => {
     resetMatchingState();
 });
 
+function createToken(userId: string, role = 'user') {
+    return jwt.sign({ sub: userId, role, type: 'access' }, 'dev-jwt-secret', { expiresIn: '15m' });
+}
+
 test('GET /matching/health returns service health', async () => {
     const result = await request('GET', '/matching/health');
 
@@ -64,11 +75,14 @@ test('GET /matching/health returns service health', async () => {
 });
 
 test('POST /matching/join queues first user and matches second user with same criteria', async () => {
+    const tokenA = createToken('user-a');
+    const tokenB = createToken('user-b');
+
     const firstJoin = await request('POST', '/matching/join', {
         userId: 'user-a',
         topic: 'arrays',
         difficulty: 'easy',
-    });
+    }, tokenA);
 
     assert.equal(firstJoin.status, 202);
 
@@ -76,7 +90,7 @@ test('POST /matching/join queues first user and matches second user with same cr
         userId: 'user-b',
         topic: 'arrays',
         difficulty: 'easy',
-    });
+    }, tokenB);
 
     assert.equal(secondJoin.status, 200);
     const secondJson = secondJoin.json as { message: string; match: { userIds: string[] } };
@@ -85,11 +99,12 @@ test('POST /matching/join queues first user and matches second user with same cr
 });
 
 test('POST /matching/join rejects invalid difficulty', async () => {
+    const token = createToken('user-a');
     const result = await request('POST', '/matching/join', {
         userId: 'user-a',
         topic: 'graphs',
         difficulty: 'expert',
-    });
+    }, token);
 
     assert.equal(result.status, 400);
     assert.deepEqual(result.json, {
@@ -98,19 +113,21 @@ test('POST /matching/join rejects invalid difficulty', async () => {
 });
 
 test('POST /matching/leave removes queued user', async () => {
+    const token = createToken('user-c');
+
     const queued = await request('POST', '/matching/join', {
         userId: 'user-c',
         topic: 'dp',
         difficulty: 'hard',
-    });
+    }, token);
     assert.equal(queued.status, 202);
 
     const left = await request('POST', '/matching/leave', {
         userId: 'user-c',
-    });
+    }, token);
     assert.equal(left.status, 200);
 
-    const status = await request('GET', '/matching/status/user-c');
+    const status = await request('GET', '/matching/status/user-c', undefined, token);
     assert.equal(status.status, 200);
     assert.deepEqual(status.json, {
         userId: 'user-c',
@@ -119,13 +136,15 @@ test('POST /matching/leave removes queued user', async () => {
 });
 
 test('GET /matching/status/:userId reports queued state', async () => {
+    const token = createToken('user-d');
+
     await request('POST', '/matching/join', {
         userId: 'user-d',
         topic: 'trees',
         difficulty: 'medium',
-    });
+    }, token);
 
-    const status = await request('GET', '/matching/status/user-d');
+    const status = await request('GET', '/matching/status/user-d', undefined, token);
     assert.equal(status.status, 200);
 
     const statusJson = status.json as {
@@ -137,6 +156,27 @@ test('GET /matching/status/:userId reports queued state', async () => {
     assert.equal(statusJson.state, 'queued');
     assert.equal(statusJson.entry?.topic, 'trees');
     assert.equal(statusJson.entry?.difficulty, 'medium');
+});
+
+test('matching endpoints reject missing auth token', async () => {
+    const result = await request('POST', '/matching/join', {
+        userId: 'user-no-auth',
+        topic: 'arrays',
+        difficulty: 'easy',
+    });
+
+    assert.equal(result.status, 401);
+});
+
+test('matching endpoints reject userId that does not match authenticated token', async () => {
+    const token = createToken('user-token');
+    const result = await request('POST', '/matching/join', {
+        userId: 'user-body',
+        topic: 'arrays',
+        difficulty: 'easy',
+    }, token);
+
+    assert.equal(result.status, 403);
 });
 
 test('queue priority always prefers exact topic+difficulty match first', () => {
