@@ -5,11 +5,6 @@ export const config = {
     get port() {
         return Number(process.env.PORT) || 3003;
     },
-    jwt: {
-        get secret() {
-            return process.env.JWT_SECRET ?? 'dev-jwt-secret';
-        },
-    },
     userService: {
         get baseUrl() {
             return process.env.USER_SERVICE_URL ?? 'http://localhost:3001';

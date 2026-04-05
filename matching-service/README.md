@@ -1,6 +1,6 @@
 # Matching Service
 
-The matching service owns the MongoDB-backed queue used to pair users by topic and difficulty. It also verifies the caller through `user-service` before allowing queue operations.
+The matching service owns the MongoDB-backed queue used to pair users by topic and difficulty. It verifies the caller through `user-service` before allowing queue operations.
 
 ## What it does
 
@@ -19,7 +19,6 @@ The service reads these variables from the environment:
 - `MONGO_DB_NAME` - MongoDB database name.
 - `USER_SERVICE_URL` - Base URL for `user-service`, defaults to `http://localhost:3001`.
 - `INTERNAL_SERVICE_TOKEN` - Shared token used to call `user-service` internal auth endpoints.
-- `JWT_SECRET` - Kept for compatibility with the wider project, but matching auth is resolved through `user-service`.
 
 ## Run Commands
 
@@ -210,11 +209,6 @@ Routes except health are protected by `requireAuth`. The request `userId` must m
 - `setAuthServiceFetch()` lets tests replace the fetch implementation used by auth resolution.
 - `AuthResolutionError` is the typed error used to map auth failures to HTTP responses.
 - `parseResolvedUser()` is an internal helper that validates the auth response payload.
-
-### JWT Utilities
-
-- `verifyAccessToken(token)` in `src/utils/jwt.ts` verifies a JWT using `JWT_SECRET` and returns the token payload after checking that `sub` exists.
-- `signAccessToken(payload)` in `src/utils/jwt.ts` signs a short-lived access token using `JWT_SECRET`.
 
 ### Matching Logic
 
