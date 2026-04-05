@@ -7,7 +7,7 @@ const SERVER_URL = 'http://localhost:3004';
 const API_URL = 'http://localhost:3004/session';
 
 async function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function runTest() {
@@ -21,7 +21,6 @@ async function runTest() {
         });
         console.log('Session created:', session.roomId, 'Status:', session.status);
 
-        
         // Step 2: Connect two users via socket
         console.log('\n=== Step 2: Connecting users ===');
         const clientA = ioClient(SERVER_URL);
@@ -118,7 +117,7 @@ async function runTest() {
 
         clientA.emit('run-code', 'test-room-1', 'user1', 'print("hello world")', 'python');
 
-        await sleep(5000);  // judge0 takes a few seconds
+        await sleep(5000); // judge0 takes a few seconds
 
         // Step 7: Check session in DB via REST
         console.log('\n=== Step 7: Checking session state ===');
@@ -148,7 +147,6 @@ async function runTest() {
         clientA.disconnect();
         clientB.disconnect();
         process.exit(0);
-
     } catch (err: any) {
         console.error('Test failed:', err.message);
         process.exit(1);
