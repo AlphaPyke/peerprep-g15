@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import jwt from 'jsonwebtoken';
 import { createApp } from '../app';
 import {
     getQueueStatus,
@@ -11,10 +10,68 @@ import {
     pickBestWaitingUserIndex,
     resetMatchingState,
 } from '../services/matching-service';
+import { setAuthServiceFetch } from '../services/auth-service.js';
 import type { QueueEntry } from '../models/matching-model';
 
 let server: Server;
 let baseUrl: string;
+const internalServiceToken = '9rjkfBsx5108G1TV3UX01BUXB';
+
+type ResolvedUser = {
+    id: string;
+    username: string;
+    displayName: string;
+    email: string;
+    role: 'user' | 'admin';
+};
+
+const accessTokens = new Map<string, ResolvedUser>();
+
+process.env.INTERNAL_SERVICE_TOKEN = internalServiceToken;
+process.env.USER_SERVICE_URL = 'http://localhost:3001';
+
+function createToken(userId: string, role: 'user' | 'admin' = 'user') {
+    const token = `access-${userId}`;
+    accessTokens.set(token, {
+        id: userId,
+        username: userId,
+        displayName: userId,
+        email: `${userId}@example.com`,
+        role,
+    });
+
+    return token;
+}
+
+async function mockAuthResolveFetch(input: URL, init?: RequestInit) {
+    if (!input.toString().endsWith('/internal/auth/resolve')) {
+        return new Response('Not found', { status: 404 });
+    }
+
+    const headers = new Headers(init?.headers);
+    if (headers.get('X-Internal-Service-Token') !== internalServiceToken) {
+        return new Response(JSON.stringify({ message: 'Invalid internal service token' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
+
+    const body = typeof init?.body === 'string' ? init.body : '';
+    const parsed = body ? (JSON.parse(body) as { accessToken?: string }) : {};
+    const user = parsed.accessToken ? accessTokens.get(parsed.accessToken) : undefined;
+
+    if (!user) {
+        return new Response(JSON.stringify({ message: 'Invalid or expired access token' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
+
+    return new Response(JSON.stringify({ user }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+    });
+}
 
 async function request(
     method: 'GET' | 'POST',
@@ -42,6 +99,8 @@ async function request(
 }
 
 test.before(async () => {
+    setAuthServiceFetch(mockAuthResolveFetch);
+
     const app = createApp();
     server = app.listen(0);
 
@@ -60,15 +119,14 @@ test.after(async () => {
             else resolve();
         });
     });
+
+    setAuthServiceFetch();
 });
 
 test.beforeEach(() => {
     resetMatchingState();
+    accessTokens.clear();
 });
-
-function createToken(userId: string, role = 'user') {
-    return jwt.sign({ sub: userId, role, type: 'access' }, 'dev-jwt-secret', { expiresIn: '15m' });
-}
 
 test('GET /matching/health returns service health', async () => {
     const result = await request('GET', '/matching/health');
