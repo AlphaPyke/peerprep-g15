@@ -381,8 +381,8 @@ test('queue priority falls back to FIFO after second wait window', () => {
 });
 
 // Edge-case and regression tests for known matching-service pitfalls.
-test('edge case: duplicate join from the same user is not idempotent', async () => {
-    // Why this matters: repeated clicks/retries can unexpectedly create a self-match response.
+test('edge case fixed: duplicate join from the same user is idempotent', async () => {
+    // Why this matters: repeated clicks/retries should keep one queue entry and avoid accidental matches.
     const token = createToken('user-dup');
 
     const firstJoin = await request(
@@ -407,15 +407,17 @@ test('edge case: duplicate join from the same user is not idempotent', async () 
     );
 
     assert.equal(firstJoin.status, 202);
-    assert.equal(secondJoin.status, 200);
+    assert.equal(secondJoin.status, 202);
 
-    const secondJoinJson = secondJoin.json as { match: { userIds: [string, string] } };
-    assert.deepEqual(secondJoinJson.match.userIds, ['user-dup', 'user-dup']);
+    const queue = listQueuedUsers();
+    const dupEntries = queue.filter((entry) => entry.userId === 'user-dup');
+    assert.equal(dupEntries.length, 1);
 });
 
-test('edge case: repeated join can self-match the same user id', async () => {
-    // Why this matters: a user can be matched with themselves, which is logically invalid.
-    const token = createToken('user-self');
+test('edge case fixed: repeated join does not self-match and later matches with another user', async () => {
+    // Why this matters: duplicate join retries should not create self-matches or consume extra queue slots.
+    const tokenSelf = createToken('user-self');
+    const tokenOther = createToken('user-other');
 
     const firstJoin = await request(
         'POST',
@@ -425,7 +427,7 @@ test('edge case: repeated join can self-match the same user id', async () => {
             topic: 'arrays',
             difficulty: 'medium',
         },
-        token,
+        tokenSelf,
     );
     const secondJoin = await request(
         'POST',
@@ -435,14 +437,26 @@ test('edge case: repeated join can self-match the same user id', async () => {
             topic: 'arrays',
             difficulty: 'medium',
         },
-        token,
+        tokenSelf,
+    );
+
+    const otherJoin = await request(
+        'POST',
+        '/matching/join',
+        {
+            userId: 'user-other',
+            topic: 'arrays',
+            difficulty: 'medium',
+        },
+        tokenOther,
     );
 
     assert.equal(firstJoin.status, 202);
-    assert.equal(secondJoin.status, 200);
+    assert.equal(secondJoin.status, 202);
+    assert.equal(otherJoin.status, 200);
 
-    const secondJoinJson = secondJoin.json as { match: { userIds: [string, string] } };
-    assert.deepEqual(secondJoinJson.match.userIds, ['user-self', 'user-self']);
+    const otherJoinJson = otherJoin.json as { match: { userIds: [string, string] } };
+    assert.deepEqual(otherJoinJson.match.userIds, ['user-self', 'user-other']);
 });
 
 test('edge case: matched state cannot be cleared through leave endpoint', async () => {

@@ -111,6 +111,18 @@ function findQueuedUser(userId: string) {
     return null;
 }
 
+// Finds a queued entry for a specific user without mutating queue state.
+function getQueuedUserEntry(userId: string) {
+    for (const queue of queueByCriteria.values()) {
+        const entry = queue.find((item) => item.userId === userId);
+        if (entry) {
+            return entry;
+        }
+    }
+
+    return null;
+}
+
 // Finds and removes the best eligible waiting user across all queues.
 function findBestWaitingCandidate(joiningUser: QueueEntry, nowMs: number) {
     let selectedCriteriaKey: string | null = null;
@@ -121,6 +133,10 @@ function findBestWaitingCandidate(joiningUser: QueueEntry, nowMs: number) {
     for (const [criteriaKey, queue] of queueByCriteria.entries()) {
         for (let index = 0; index < queue.length; index += 1) {
             const candidate = queue[index];
+            if (candidate.userId === joiningUser.userId) {
+                continue;
+            }
+
             const stage = getMatchStage(joiningUser, candidate, nowMs);
             if (stage === null) continue;
 
@@ -158,6 +174,16 @@ function findBestWaitingCandidate(joiningUser: QueueEntry, nowMs: number) {
 // Attempts to match immediately from staged policy; otherwise enqueues the user.
 export function joinQueue(request: MatchRequest, nowMs = Date.now()) {
     purgeTimedOutEntries(nowMs);
+
+    const existingMatch = matchByUserId.get(request.userId);
+    if (existingMatch) {
+        return { state: 'matched' as const, match: existingMatch };
+    }
+
+    const existingQueuedEntry = getQueuedUserEntry(request.userId);
+    if (existingQueuedEntry) {
+        return { state: 'queued' as const, entry: existingQueuedEntry };
+    }
 
     const criteriaKey = createCriteriaKey(request.topic, request.difficulty);
     const existingQueue = queueByCriteria.get(criteriaKey) ?? [];

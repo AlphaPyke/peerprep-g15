@@ -94,6 +94,12 @@ Responses:
 - `400 Bad Request` when required fields are missing or `difficulty` is invalid.
 - `403 Forbidden` when the `userId` does not match the authenticated user.
 
+Duplicate join behavior (idempotency):
+
+- Re-sending `POST /matching/join` for a user that is already queued returns `202 Accepted` with the existing queue entry.
+- Re-sending `POST /matching/join` for a user that is already matched returns `200 OK` with the existing match.
+- The service does not create duplicate queue entries for the same user and does not allow self-match (`userId` matched to itself).
+
 ### Leave
 `POST /matching/leave` - Remove a user from the queue.
 
