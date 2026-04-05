@@ -1,11 +1,26 @@
 export const config = {
-    nodeEnv: process.env.NODE_ENV ?? 'development',
-    port: Number(process.env.PORT) || 3002,
-    jwt: {
-        secret: process.env.JWT_SECRET ?? 'dev-jwt-secret',
+    get nodeEnv() {
+        return process.env.NODE_ENV ?? 'development';
+    },
+    get port() {
+        return Number(process.env.PORT) || 3003;
+    },
+    userService: {
+        get baseUrl() {
+            return process.env.USER_SERVICE_URL ?? 'http://localhost:3001';
+        },
+    },
+    internal: {
+        get serviceToken() {
+            return process.env.INTERNAL_SERVICE_TOKEN ?? '';
+        },
     },
     mongo: {
-        uri: process.env.MONGO_URI ?? '',
-        dbName: process.env.MONGO_DB_NAME ?? '',
+        get uri() {
+            return process.env.MONGO_URI ?? '';
+        },
+        get dbName() {
+            return process.env.MONGO_DB_NAME ?? '';
+        },
     },
 };
