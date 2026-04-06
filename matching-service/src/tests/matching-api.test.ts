@@ -307,6 +307,23 @@ test('GET /matching/status/:userId returns match with question when matched', as
     assert.equal(statusJson.questions, undefined);
 });
 
+test('capitalized existing match difficulty still hydrates match.question', async () => {
+    const repository = createInMemoryMatchingRepository();
+    setMatchingRepository(repository);
+
+    await repository.saveMatch({
+        matchId: 'match-cap-difficulty',
+        userIds: ['user-cap-a', 'user-cap-b'],
+        topic: 'arrays',
+        difficulty: 'Easy' as unknown as 'easy' | 'medium' | 'hard',
+        createdAt: new Date('2026-04-04T15:00:00.000Z').toISOString(),
+    });
+
+    const status = await getQueueStatus('user-cap-a', Date.now(), 'access-user-cap-a');
+    assert.equal(status.state, 'matched');
+    assert.equal(status.match?.question?.questionId, 1);
+});
+
 test('match with different topics chooses one topic randomly and lower difficulty', async () => {
     const baseTimeMs = new Date('2026-04-04T12:00:00.000Z').getTime();
 
@@ -368,6 +385,45 @@ test('match with same topic but different difficulty picks lower difficulty', as
     assert.equal(match.difficulty, 'medium');
     assert.equal(match.question?.difficulty, 'Medium');
     assert.ok(match.question?.categories.includes('dp'));
+});
+
+test('queued same-topic different-difficulty users can match on status poll after expansion window', async () => {
+    const baseTimeMs = new Date('2026-04-04T13:30:00.000Z').getTime();
+
+    const firstJoin = await joinQueue(
+        {
+            userId: 'user-status-rematch-a',
+            topic: 'dp',
+            difficulty: 'hard',
+        },
+        baseTimeMs,
+        'access-user-status-rematch-a',
+    );
+    assert.equal(firstJoin.state, 'queued');
+
+    const secondJoin = await joinQueue(
+        {
+            userId: 'user-status-rematch-b',
+            topic: 'dp',
+            difficulty: 'medium',
+        },
+        baseTimeMs + 10_000,
+        'access-user-status-rematch-b',
+    );
+    assert.equal(secondJoin.state, 'queued');
+
+    const statusAfterExpansion = await getQueueStatus(
+        'user-status-rematch-b',
+        baseTimeMs + 15_000,
+        'access-user-status-rematch-b',
+    );
+
+    assert.equal(statusAfterExpansion.state, 'matched');
+    const match = statusAfterExpansion.match as MatchResult;
+    assert.equal(match.topic, 'dp');
+    assert.equal(match.difficulty, 'medium');
+    assert.ok(match.userIds.includes('user-status-rematch-a'));
+    assert.ok(match.userIds.includes('user-status-rematch-b'));
 });
 
 test('when no question matches resolved topic and lower difficulty, users remain queued', async () => {

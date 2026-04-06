@@ -5,12 +5,34 @@ type FetchLike = (input: URL, init?: RequestInit) => Promise<Response>;
 
 let fetchImpl: FetchLike = (input, init) => fetch(input, init);
 
+function logQuestionSelectionFailure(
+    reason:
+        | 'missing_access_token'
+        | 'request_failed'
+        | 'non_ok_response'
+        | 'invalid_json'
+        | 'no_questions_for_difficulty'
+        | 'no_questions_for_topic',
+    topic: string,
+    difficulty: Difficulty,
+    details?: Record<string, unknown>,
+) {
+    console.warn('Question selection failed', {
+        reason,
+        topic,
+        difficulty,
+        ...details,
+    });
+}
+
 export function setQuestionServiceFetch(nextFetch?: FetchLike) {
     fetchImpl = nextFetch ?? ((input, init) => fetch(input, init));
 }
 
-function toQuestionDifficulty(difficulty: Difficulty) {
-    switch (difficulty) {
+function toQuestionDifficulty(difficulty: string) {
+    const normalizedDifficulty = difficulty.trim().toLowerCase();
+
+    switch (normalizedDifficulty) {
         case 'easy':
             return 'Easy';
         case 'medium':
@@ -18,7 +40,7 @@ function toQuestionDifficulty(difficulty: Difficulty) {
         case 'hard':
             return 'Hard';
         default:
-            return 'Easy';
+            return undefined;
     }
 }
 
@@ -79,11 +101,20 @@ export async function fetchRandomQuestionForMatch(
     accessToken?: string,
 ): Promise<MatchedQuestion | undefined> {
     if (!accessToken) {
+        logQuestionSelectionFailure('missing_access_token', topic, difficulty);
         return undefined;
     }
 
     const questionsUrl = new URL('/questions', config.questionService.baseUrl);
-    questionsUrl.searchParams.set('difficulty', toQuestionDifficulty(difficulty));
+    const questionDifficulty = toQuestionDifficulty(difficulty);
+    if (!questionDifficulty) {
+        logQuestionSelectionFailure('no_questions_for_difficulty', topic, difficulty, {
+            reason: 'invalid_difficulty_value',
+        });
+        return undefined;
+    }
+
+    questionsUrl.searchParams.set('difficulty', questionDifficulty);
 
     let response: Response;
     try {
@@ -93,11 +124,19 @@ export async function fetchRandomQuestionForMatch(
                 Authorization: `Bearer ${accessToken}`,
             },
         });
-    } catch {
+    } catch (error) {
+        logQuestionSelectionFailure('request_failed', topic, difficulty, {
+            questionServiceUrl: questionsUrl.toString(),
+            error,
+        });
         return undefined;
     }
 
     if (!response.ok) {
+        logQuestionSelectionFailure('non_ok_response', topic, difficulty, {
+            status: response.status,
+            questionServiceUrl: questionsUrl.toString(),
+        });
         return undefined;
     }
 
@@ -105,16 +144,26 @@ export async function fetchRandomQuestionForMatch(
     try {
         payload = await response.json();
     } catch {
+        logQuestionSelectionFailure('invalid_json', topic, difficulty, {
+            questionServiceUrl: questionsUrl.toString(),
+        });
         return undefined;
     }
 
     const questions = parseQuestions(payload);
     if (questions.length === 0) {
+        logQuestionSelectionFailure('no_questions_for_difficulty', topic, difficulty, {
+            questionServiceUrl: questionsUrl.toString(),
+        });
         return undefined;
     }
 
     const topicMatchedQuestions = questions.filter((question) => hasTopic(question, topic));
     if (topicMatchedQuestions.length === 0) {
+        logQuestionSelectionFailure('no_questions_for_topic', topic, difficulty, {
+            questionServiceUrl: questionsUrl.toString(),
+            fetchedQuestionCount: questions.length,
+        });
         return undefined;
     }
 

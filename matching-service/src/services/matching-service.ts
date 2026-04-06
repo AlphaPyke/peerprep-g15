@@ -433,13 +433,101 @@ async function safeMarkMatchHistoryEnded(matchId: string, nowMs: number) {
     }
 }
 
+async function ensureMatchHasQuestion(match: MatchResult, accessToken?: string) {
+    if (match.question) {
+        return match;
+    }
+
+    const question = await fetchRandomQuestionForMatch(match.topic, match.difficulty, accessToken);
+    if (!question) {
+        console.warn('Unable to hydrate question for existing match', {
+            matchId: match.matchId,
+            topic: match.topic,
+            difficulty: match.difficulty,
+        });
+        return match;
+    }
+
+    return {
+        ...match,
+        question,
+    };
+}
+
+async function attemptMatchForEntry(
+    entry: QueueEntry,
+    nowMs: number,
+    accessToken: string | undefined,
+    joiningUserAlreadyQueued: boolean,
+) {
+    const queuedUsers = await repository.listQueuedUsers(nowMs);
+    const waitingUser = findBestWaitingCandidate(queuedUsers, entry, nowMs);
+    if (!waitingUser) {
+        return null;
+    }
+
+    const criteria = resolveMatchCriteria(waitingUser, entry);
+    const question = await fetchRandomQuestionForMatch(
+        criteria.topic,
+        criteria.difficulty,
+        accessToken,
+    );
+
+    if (!question) {
+        console.warn('Match candidate found but no valid question available, keeping user queued', {
+            joiningUserId: entry.userId,
+            waitingUserId: waitingUser.userId,
+            topic: criteria.topic,
+            difficulty: criteria.difficulty,
+        });
+        return null;
+    }
+
+    if (joiningUserAlreadyQueued) {
+        const removedJoiningUser = await repository.removeQueuedUser(entry.userId);
+        if (!removedJoiningUser) {
+            return null;
+        }
+
+        const removedWaitingUser = await repository.removeQueuedUser(waitingUser.userId);
+        if (!removedWaitingUser) {
+            await repository.enqueue(removedJoiningUser);
+            return null;
+        }
+    } else {
+        const removedWaitingUser = await repository.removeQueuedUser(waitingUser.userId);
+        if (!removedWaitingUser) {
+            return null;
+        }
+    }
+
+    const match: MatchResult = {
+        matchId: randomUUID(),
+        userIds: [waitingUser.userId, entry.userId],
+        topic: criteria.topic,
+        difficulty: criteria.difficulty,
+        question,
+        createdAt: new Date(nowMs).toISOString(),
+    };
+
+    await repository.saveMatch(match);
+    await Promise.all([
+        safeRecordQueueEvent(waitingUser, 'matched', nowMs, match.matchId),
+        safeRecordQueueEvent(entry, 'matched', nowMs, match.matchId),
+        safeRecordMatchHistory(match),
+    ]);
+
+    return match;
+}
+
 // Attempts to match immediately from staged policy; otherwise enqueues the user.
 export async function joinQueue(request: MatchRequest, nowMs = Date.now(), accessToken?: string) {
     await repository.purgeTimedOut(nowMs);
 
     const existingMatch = await repository.getMatchByUserId(request.userId);
     if (existingMatch) {
-        return { state: 'matched' as const, match: existingMatch };
+        const hydratedMatch = await ensureMatchHasQuestion(existingMatch, accessToken);
+        return { state: 'matched' as const, match: hydratedMatch };
     }
 
     const existingQueuedEntry = await repository.getQueuedUserEntry(request.userId);
@@ -453,38 +541,8 @@ export async function joinQueue(request: MatchRequest, nowMs = Date.now(), acces
         joinedAt: new Date(nowMs).toISOString(),
     };
 
-    const queuedUsers = await repository.listQueuedUsers(nowMs);
-    const waitingUser = findBestWaitingCandidate(queuedUsers, entry, nowMs);
-    if (waitingUser) {
-        const criteria = resolveMatchCriteria(waitingUser, entry);
-        const question = await fetchRandomQuestionForMatch(
-            criteria.topic,
-            criteria.difficulty,
-            accessToken,
-        );
-
-        if (!question) {
-            await repository.enqueue(entry);
-            return { state: 'queued' as const, entry };
-        }
-
-        const match: MatchResult = {
-            matchId: randomUUID(),
-            userIds: [waitingUser.userId, entry.userId],
-            topic: criteria.topic,
-            difficulty: criteria.difficulty,
-            question,
-            createdAt: new Date(nowMs).toISOString(),
-        };
-
-        await repository.removeQueuedUser(waitingUser.userId);
-        await repository.saveMatch(match);
-        await Promise.all([
-            safeRecordQueueEvent(waitingUser, 'matched', nowMs, match.matchId),
-            safeRecordQueueEvent(entry, 'matched', nowMs, match.matchId),
-            safeRecordMatchHistory(match),
-        ]);
-
+    const match = await attemptMatchForEntry(entry, nowMs, accessToken, false);
+    if (match) {
         return { state: 'matched' as const, match };
     }
 
@@ -507,13 +565,18 @@ export async function leaveQueue(userId: string) {
 }
 
 // Returns matched/queued/not_found state for a given user.
-export async function getQueueStatus(userId: string, nowMs = Date.now()): Promise<QueueStatus> {
+export async function getQueueStatus(
+    userId: string,
+    nowMs = Date.now(),
+    accessToken?: string,
+): Promise<QueueStatus> {
     const match = await repository.getMatchByUserId(userId);
     if (match) {
+        const hydratedMatch = await ensureMatchHasQuestion(match, accessToken);
         return {
             userId,
             state: 'matched',
-            match,
+            match: hydratedMatch,
         };
     }
 
@@ -525,6 +588,15 @@ export async function getQueueStatus(userId: string, nowMs = Date.now()): Promis
             return {
                 userId,
                 state: 'timed_out',
+            };
+        }
+
+        const rematched = await attemptMatchForEntry(entry, nowMs, accessToken, true);
+        if (rematched) {
+            return {
+                userId,
+                state: 'matched',
+                match: rematched,
             };
         }
 

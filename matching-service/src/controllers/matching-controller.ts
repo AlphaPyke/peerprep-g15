@@ -121,6 +121,7 @@ export class MatchingController {
     static async status(req: Request, res: Response, next: NextFunction) {
         try {
             const auth = (req as AuthenticatedRequest).auth;
+            const accessToken = getBearerToken(req.headers.authorization);
             const userId = getRequiredString(req.params.userId || req.query.userId);
 
             if (!userId) {
@@ -135,7 +136,7 @@ export class MatchingController {
                 });
             }
 
-            const status = await getQueueStatus(userId);
+            const status = await getQueueStatus(userId, undefined, accessToken);
             return res.status(200).json(status);
         } catch (err) {
             next(err);
