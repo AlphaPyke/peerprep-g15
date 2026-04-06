@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import {
+    MatchHistoryModel,
     MatchModel,
+    QueueHistoryModel,
     QueueModel,
     matchDocumentToResult,
     queueDocumentToEntry,
@@ -18,6 +20,9 @@ export interface MatchingRepository {
     removeQueuedUser(userId: string): Promise<QueueEntry | null>;
     saveMatch(match: MatchResult): Promise<void>;
     endMatch(matchId: string): Promise<boolean>;
+    recordQueueEvent(entry: QueueEntry, eventType: 'queued' | 'matched' | 'left' | 'timed_out', nowMs: number, matchId?: string): Promise<void>;
+    recordMatchHistory(match: MatchResult): Promise<void>;
+    markMatchHistoryEnded(matchId: string, nowMs: number): Promise<void>;
 }
 
 const TOPIC_EXPANSION_WAIT_MS = 15_000;
@@ -31,7 +36,12 @@ const DIFFICULTY_RANK: Record<Difficulty, number> = {
 
 class MongoMatchingRepository implements MatchingRepository {
     async clear() {
-        await Promise.all([QueueModel.deleteMany({}), MatchModel.deleteMany({})]);
+        await Promise.all([
+            QueueModel.deleteMany({}),
+            MatchModel.deleteMany({}),
+            QueueHistoryModel.deleteMany({}),
+            MatchHistoryModel.deleteMany({}),
+        ]);
     }
 
     async purgeTimedOut(nowMs: number) {
@@ -82,6 +92,49 @@ class MongoMatchingRepository implements MatchingRepository {
             { new: true },
         );
         return result !== null;
+    }
+
+    async recordQueueEvent(
+        entry: QueueEntry,
+        eventType: 'queued' | 'matched' | 'left' | 'timed_out',
+        nowMs: number,
+        matchId?: string,
+    ) {
+        await QueueHistoryModel.create({
+            userId: entry.userId,
+            topic: entry.topic.trim(),
+            difficulty: entry.difficulty,
+            eventType,
+            matchId,
+            occurredAt: new Date(nowMs),
+        });
+    }
+
+    async recordMatchHistory(match: MatchResult) {
+        await MatchHistoryModel.updateOne(
+            { matchId: match.matchId },
+            {
+                $set: {
+                    userIds: match.userIds,
+                    topic: match.topic.trim(),
+                    difficulty: match.difficulty,
+                    question: match.question,
+                    createdAt: new Date(match.createdAt),
+                },
+            },
+            { upsert: true },
+        );
+    }
+
+    async markMatchHistoryEnded(matchId: string, nowMs: number) {
+        await MatchHistoryModel.updateOne(
+            { matchId },
+            {
+                $set: {
+                    endedAt: new Date(nowMs),
+                },
+            },
+        );
     }
 }
 
@@ -167,6 +220,23 @@ class InMemoryMatchingRepository implements MatchingRepository {
             }
         }
         return found;
+    }
+
+    async recordQueueEvent(
+        _entry: QueueEntry,
+        _eventType: 'queued' | 'matched' | 'left' | 'timed_out',
+        _nowMs: number,
+        _matchId?: string,
+    ) {
+        // No-op in memory repository for tests.
+    }
+
+    async recordMatchHistory(_match: MatchResult) {
+        // No-op in memory repository for tests.
+    }
+
+    async markMatchHistoryEnded(_matchId: string, _nowMs: number) {
+        // No-op in memory repository for tests.
     }
 }
 
@@ -312,6 +382,46 @@ function findBestWaitingCandidate(queue: QueueEntry[], joiningUser: QueueEntry, 
     return queue[selectedIndex];
 }
 
+async function safeRecordQueueEvent(
+    entry: QueueEntry,
+    eventType: 'queued' | 'matched' | 'left' | 'timed_out',
+    nowMs: number,
+    matchId?: string,
+) {
+    try {
+        await repository.recordQueueEvent(entry, eventType, nowMs, matchId);
+    } catch (error) {
+        console.error('Failed to write queue history event', {
+            userId: entry.userId,
+            eventType,
+            matchId,
+            error,
+        });
+    }
+}
+
+async function safeRecordMatchHistory(match: MatchResult) {
+    try {
+        await repository.recordMatchHistory(match);
+    } catch (error) {
+        console.error('Failed to write match history record', {
+            matchId: match.matchId,
+            error,
+        });
+    }
+}
+
+async function safeMarkMatchHistoryEnded(matchId: string, nowMs: number) {
+    try {
+        await repository.markMatchHistoryEnded(matchId, nowMs);
+    } catch (error) {
+        console.error('Failed to mark match history ended', {
+            matchId,
+            error,
+        });
+    }
+}
+
 // Attempts to match immediately from staged policy; otherwise enqueues the user.
 export async function joinQueue(request: MatchRequest, nowMs = Date.now(), accessToken?: string) {
     await repository.purgeTimedOut(nowMs);
@@ -358,11 +468,17 @@ export async function joinQueue(request: MatchRequest, nowMs = Date.now(), acces
 
         await repository.removeQueuedUser(waitingUser.userId);
         await repository.saveMatch(match);
+        await Promise.all([
+            safeRecordQueueEvent(waitingUser, 'matched', nowMs, match.matchId),
+            safeRecordQueueEvent(entry, 'matched', nowMs, match.matchId),
+            safeRecordMatchHistory(match),
+        ]);
 
         return { state: 'matched' as const, match };
     }
 
     await repository.enqueue(entry);
+    await safeRecordQueueEvent(entry, 'queued', nowMs);
 
     return { state: 'queued' as const, entry };
 }
@@ -373,6 +489,8 @@ export async function leaveQueue(userId: string) {
     if (!removed) {
         return false;
     }
+
+    await safeRecordQueueEvent(removed, 'left', Date.now());
 
     return true;
 }
@@ -392,6 +510,7 @@ export async function getQueueStatus(userId: string, nowMs = Date.now()): Promis
     if (entry) {
         if (isTimedOut(entry, nowMs)) {
             await repository.removeQueuedUser(userId);
+            await safeRecordQueueEvent(entry, 'timed_out', nowMs);
             return {
                 userId,
                 state: 'timed_out',
@@ -414,6 +533,9 @@ export async function getQueueStatus(userId: string, nowMs = Date.now()): Promis
 // Ends a match by matchId and returns whether the match was found and deleted.
 export async function endMatch(matchId: string) {
     const removed = await repository.endMatch(matchId);
+    if (removed) {
+        await safeMarkMatchHistoryEnded(matchId, Date.now());
+    }
     return removed;
 }
 
