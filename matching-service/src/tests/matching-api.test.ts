@@ -262,6 +262,51 @@ test('POST /matching/join queues first user and matches second user with same cr
     assert.equal(secondJson.match.question?.questionId, 1);
 });
 
+test('GET /matching/status/:userId returns match with question when matched', async () => {
+    const tokenA = createToken('user-status-a');
+    const tokenB = createToken('user-status-b');
+
+    const firstJoin = await request(
+        'POST',
+        '/matching/join',
+        {
+            userId: 'user-status-a',
+            topic: 'arrays',
+            difficulty: 'easy',
+        },
+        tokenA,
+    );
+    assert.equal(firstJoin.status, 202);
+
+    const secondJoin = await request(
+        'POST',
+        '/matching/join',
+        {
+            userId: 'user-status-b',
+            topic: 'arrays',
+            difficulty: 'easy',
+        },
+        tokenB,
+    );
+    assert.equal(secondJoin.status, 200);
+
+    const status = await request('GET', '/matching/status/user-status-a', undefined, tokenA);
+    assert.equal(status.status, 200);
+
+    const statusJson = status.json as {
+        userId: string;
+        state: string;
+        match?: { matchId: string; question?: { questionId: number } };
+        questions?: Array<{ questionId: number }>;
+    };
+
+    assert.equal(statusJson.userId, 'user-status-a');
+    assert.equal(statusJson.state, 'matched');
+    assert.equal(typeof statusJson.match?.matchId, 'string');
+    assert.equal(statusJson.match?.question?.questionId, 1);
+    assert.equal(statusJson.questions, undefined);
+});
+
 test('match with different topics chooses one topic randomly and lower difficulty', async () => {
     const baseTimeMs = new Date('2026-04-04T12:00:00.000Z').getTime();
 
