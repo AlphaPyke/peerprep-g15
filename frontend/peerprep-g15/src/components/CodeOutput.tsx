@@ -5,7 +5,10 @@ const OutputPanel = ({ isExecuting, codeResult }: { isExecuting: boolean; codeRe
 
     if (isExecuting) {
         return (
-            <div className="border-top p-3 text-muted d-flex align-items-center gap-2" style={{ fontSize: '0.85rem' }}>
+            <div
+                className="border-top p-3 text-muted d-flex align-items-center gap-2"
+                style={{ fontSize: '0.85rem' }}
+            >
                 <div className="spinner-border spinner-border-sm" role="status" />
                 Running...
             </div>
@@ -26,7 +29,10 @@ const OutputPanel = ({ isExecuting, codeResult }: { isExecuting: boolean; codeRe
     const results = codeResult.results ?? [];
 
     return (
-        <div className="border-top d-flex flex-column" style={{ maxHeight: '220px', fontSize: '0.85rem' }}>
+        <div
+            className="border-top d-flex flex-column"
+            style={{ maxHeight: '220px', fontSize: '0.85rem' }}
+        >
             {/* Tab headers */}
             <div className="d-flex border-bottom bg-light overflow-auto" style={{ flexShrink: 0 }}>
                 {results.map((r: any, i: number) => (
@@ -36,7 +42,8 @@ const OutputPanel = ({ isExecuting, codeResult }: { isExecuting: boolean; codeRe
                         className="btn btn-sm rounded-0 border-0 border-end px-3 py-2 d-flex align-items-center gap-1"
                         style={{
                             fontWeight: activeTab === i ? 600 : 400,
-                            borderBottom: activeTab === i ? '2px solid #0d6efd' : '2px solid transparent',
+                            borderBottom:
+                                activeTab === i ? '2px solid #0d6efd' : '2px solid transparent',
                             background: activeTab === i ? '#fff' : 'transparent',
                             whiteSpace: 'nowrap',
                         }}
@@ -64,18 +71,30 @@ const OutputPanel = ({ isExecuting, codeResult }: { isExecuting: boolean; codeRe
                     <div className="row g-2">
                         <div className="col-6">
                             <div className="p-2 rounded bg-light border h-100">
-                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>INPUT</div>
+                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+                                    INPUT
+                                </div>
                                 <code>
-                                    {typeof results[activeTab].input === 'object' && results[activeTab].input !== null
-                                        ? Object.values(results[activeTab].input).map((v: any) => JSON.stringify(v)).join(', ')
+                                    {typeof results[activeTab].input === 'object' &&
+                                    results[activeTab].input !== null
+                                        ? Object.values(results[activeTab].input)
+                                              .map((v: any) => JSON.stringify(v))
+                                              .join(', ')
                                         : JSON.stringify(results[activeTab].input)}
                                 </code>
                             </div>
                         </div>
                         <div className="col-3">
-                            <div className="p-2 rounded border h-100" style={{ background: '#f0fff4', borderColor: '#86efac' }}>
-                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>EXPECTED</div>
-                                <code className="text-success">{JSON.stringify(results[activeTab].expected)}</code>
+                            <div
+                                className="p-2 rounded border h-100"
+                                style={{ background: '#f0fff4', borderColor: '#86efac' }}
+                            >
+                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+                                    EXPECTED
+                                </div>
+                                <code className="text-success">
+                                    {JSON.stringify(results[activeTab].expected)}
+                                </code>
                             </div>
                         </div>
                         <div className="col-3">
@@ -86,16 +105,26 @@ const OutputPanel = ({ isExecuting, codeResult }: { isExecuting: boolean; codeRe
                                     borderColor: results[activeTab].passed ? '#86efac' : '#fca5a5',
                                 }}
                             >
-                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>YOUR OUTPUT</div>
-                                <code className={results[activeTab].passed ? 'text-success' : 'text-danger'}>
-                                    {results[activeTab].actual || <span className="text-muted fst-italic">no output</span>}
+                                <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+                                    YOUR OUTPUT
+                                </div>
+                                <code
+                                    className={
+                                        results[activeTab].passed ? 'text-success' : 'text-danger'
+                                    }
+                                >
+                                    {results[activeTab].actual || (
+                                        <span className="text-muted fst-italic">no output</span>
+                                    )}
                                 </code>
                             </div>
                         </div>
                     </div>
                     {results[activeTab].stderr && (
                         <div className="mt-2 p-2 rounded bg-danger bg-opacity-10 border border-danger">
-                            <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>STDERR</div>
+                            <div className="text-muted mb-1" style={{ fontSize: '0.75rem' }}>
+                                STDERR
+                            </div>
                             <code className="text-danger">{results[activeTab].stderr}</code>
                         </div>
                     )}

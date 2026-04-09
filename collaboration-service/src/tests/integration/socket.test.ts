@@ -149,12 +149,12 @@ describe('code-change', () => {
             // create a real Yjs update
             const ydoc = new Y.Doc();
             const ytext = ydoc.getText('code');
-            
+
             let update: Uint8Array | null = null;
             ydoc.on('update', (u: Uint8Array) => {
                 update = u;
             });
-            
+
             ytext.insert(0, 'console.log("hello")');
 
             // emit the update from clientA
