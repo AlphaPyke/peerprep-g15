@@ -95,7 +95,11 @@ export function initSocket(server: http.Server) {
         // user locks in language
         socket.on('lock-in', async (roomId: string, userId: string, language: string) => {
             const session = await voteLanguage(roomId, userId, language);
-            console.log('lock-in result:', { userId, status: session?.status, language: session?.language });
+            console.log('lock-in result:', {
+                userId,
+                status: session?.status,
+                language: session?.language,
+            });
 
             if (session?.status === 'active') {
                 // both locked in and agreed
@@ -104,7 +108,9 @@ export function initSocket(server: http.Server) {
                 roomDocs.delete(roomId);
                 // Only the user who just locked in (triggering session start) inserts the starter code
                 socket.emit('session-started', { language: session.language, insertStarter: true });
-                socket.to(roomId).emit('session-started', { language: session.language, insertStarter: false });
+                socket
+                    .to(roomId)
+                    .emit('session-started', { language: session.language, insertStarter: false });
             } else if (session?.status === 'ended') {
                 // disagreed
                 clearTimeout(languageTimers.get(roomId));

@@ -85,7 +85,6 @@ const Collab = () => {
     const [submitTimer, setSubmitTimer] = useState(10);
     const [question, setQuestion] = useState<Question | null>(null);
 
-
     // Connect socket
     useEffect(() => {
         const s = io(COLLAB_URL, {
@@ -264,8 +263,20 @@ const Collab = () => {
 
     // Pre-fill starter code — only the designated user inserts to avoid double insertion
     useEffect(() => {
-        console.log('starter effect:', { sessionStatus, shouldInsertStarter, question: !!question, selectedLanguage, starterInserted: starterInserted.current });
-        if (sessionStatus === 'active' && shouldInsertStarter && question && selectedLanguage && !starterInserted.current) {
+        console.log('starter effect:', {
+            sessionStatus,
+            shouldInsertStarter,
+            question: !!question,
+            selectedLanguage,
+            starterInserted: starterInserted.current,
+        });
+        if (
+            sessionStatus === 'active' &&
+            shouldInsertStarter &&
+            question &&
+            selectedLanguage &&
+            !starterInserted.current
+        ) {
             const starter = question.starterCode?.[selectedLanguage];
             console.log('starter code found:', starter);
             if (!starter) return;
@@ -283,8 +294,8 @@ const Collab = () => {
         const compilerOptions = {
             target: monaco.languages.typescript.ScriptTarget.ESNext,
             allowNonTsExtensions: true,
-            checkJs: true,          // Reports errors in plain .js files
-            noImplicitAny: false,   
+            checkJs: true, // Reports errors in plain .js files
+            noImplicitAny: false,
             noImplicitReturn: true, // Specifically catches missing return statements
             strictNullChecks: true,
         };
@@ -295,7 +306,7 @@ const Collab = () => {
         // --- 2. Python, Java, C++ (Standard Robustness) ---
         // For these, Monaco handles "Syntax" (missing brackets/colons) out of the box.
         // We can improve the experience by enabling specific Editor options.
-        
+
         monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
             validate: true,
         });
@@ -320,7 +331,14 @@ const Collab = () => {
     const handleSubmit = () => {
         if (!socket) return;
         const code = ytext.current.toString();
-        socket.emit('submit-code', roomId, userId, code, selectedLanguage, question?.testCases ?? []);
+        socket.emit(
+            'submit-code',
+            roomId,
+            userId,
+            code,
+            selectedLanguage,
+            question?.testCases ?? [],
+        );
         setIsExecuting(true);
     };
 
@@ -628,13 +646,13 @@ const Collab = () => {
                                     quickSuggestions: {
                                         other: true,
                                         comments: false,
-                                        strings: true
+                                        strings: true,
                                     },
                                     parameterHints: { enabled: true },
                                     suggestOnTriggerCharacters: true,
                                     acceptSuggestionOnEnter: 'on',
                                     tabCompletion: 'on',
-                                    wordBasedSuggestions: 'allDocuments',     // Shows the "IntelliSense" popup
+                                    wordBasedSuggestions: 'allDocuments', // Shows the "IntelliSense" popup
                                 }}
                             />
                         </div>
