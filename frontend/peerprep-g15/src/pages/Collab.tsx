@@ -141,7 +141,6 @@ const Collab = () => {
         s.on('code-result', (result: any) => {
             setIsExecuting(false);
             setCodeResult(result);
-            console.log('Code execution result:', result);
         });
 
         s.on('submit-result', (result: any) => {
